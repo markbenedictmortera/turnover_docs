@@ -1,0 +1,99 @@
+---
+title: "Progress Report"
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    css: styles.css
+---
+
+## 
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+```{r}
+
+#Load necessary objects first
+
+endpoints <- list(assets = c(v1 = "https://kc.kobotoolbox.org/api/v1/forms",
+                             v2 = "https://kf.kobotoolbox.org/api/v2/assets"),
+                  tokens = "https://kf.kobotoolbox.org/token/?format=json",
+                  data = c(v1 = "https://kc.kobotoolbox.org/api/v1/data/",
+                           v2 = "https://kf.kobotoolbox.org/api/v2/assets/"))
+```
+
+```{r}
+
+#Load packages
+
+packages <- c("httr", "tidyverse")
+
+for(i in 1:length(packages)) {
+  if(!packages[i]%in%installed.packages()) {
+    install.packages(packages[i], char)
+  }
+  library(packages[i], character.only = T)
+}
+
+
+library(httr)
+library(tidyverse)
+```
+
+```{r}
+
+#ETL functions
+
+getKoBo <- function(.url,
+                    .auth) {
+  if(!methods::hasArg(.auth)|!is.list(.auth)) {
+    stop(".auth must be a list of credentials containing either the username and password, or the token")
+         }
+  if("token"%in%ls(.auth)) {
+    .auth <- httr::add_headers(Authorization = paste0("Token ", .auth$token))
+  } else if (c("password")%in%ls(.auth) & c("username")%in%ls(.auth)) {
+    .auth <- httr::authenticate(.auth$username,
+                                .auth$password)
+  } else {
+    stop(".auth must be a list of credentials containing either the username and password, or the token")
+    }
+  .data <- httr::GET(.url,
+                     .auth
+                     )
+  return(.data)
+}
+
+getData <- function(.id, .auth, .version = "v2") {
+  if(!methods::hasArg(.id)|!is.character(.id)) {stop(".id must be a string")}
+  .url <- switch(.version,
+         v1 = paste0(endpoints$data["v1"], .id, ".csv"),
+         v2 = paste0(endpoints$data["v2"], .id, "/data")
+  )
+  getKoBo(.url,
+          .auth)
+}
+
+
+# Loads the csv that contains the recipient list
+readHelper <- function() {
+  assign("allocation_list",
+         readRDS("allocation_list.RDS"),
+         envir = .GlobalEnv)
+  assign("recipient_list",
+         readRDS("recipient_list.RDS"),
+         envir = .GlobalEnv)
+}
+
+readHelper()
+
+
+```
+
+
+```{r}
+
+#Load form data
+
+form_a <- 
+
+```
