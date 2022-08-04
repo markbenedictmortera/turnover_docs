@@ -3,18 +3,25 @@ title: "Progress Report"
 format:
   html:
     toc: true
-    html-math-method: katex
+    toc-depth: 6
+    page-layout: full
+    theme: united
+    max-width: "1920"
+    margin-left: 100px
+    margin-right: 100px
+    code-fold: true
+    code-overflow: wrap
+    highlight-style: github
     css: styles.css
 ---
 
 ## Data Preparation
 
-You can skip/hide this part. This is just the code for the data preparation. 
+You can skip/hide this part. This is just the code for the data preparation.
 
+#####   Load objects
 
-### Load objects
-
-```{r saved_objects}
+```{r saved_objects, warning=F}
 
 #Load necessary objects
 
@@ -25,8 +32,6 @@ endpoints <- list(assets = c(v1 = "https://kc.kobotoolbox.org/api/v1/forms",
                            v2 = "https://kf.kobotoolbox.org/api/v2/assets/"))
 
 auth <- list(token = "7d8397035a9b3a4e52b0d3ed6b61426881139a44")
-
-
 
 #### default colors
 default_red <- "#f8766d"
@@ -73,32 +78,27 @@ ppe_stockout_columns <- c("ppe_checklist_n95mask_stockout",
                           "ppe_checklist_surgicalmask_stockout",
                           "ppe_checklist_gloves_stockout",
                           "ppe_checklist_ppe_stockout")
-
-
 ```
 
-### Load packages
+#####   Load packages
 
-```{r load_packages}
+```{r load_packages, warning=F}
 
-#Load packages
-
-packages <- c("httr", "tidyverse", "jsonlite", "readr", "stringi")
+packages <- c("httr", "tidyverse", "jsonlite", "stringi")
 
 for(i in 1:length(packages)) {
   if(!packages[i]%in%installed.packages()) {
     install.packages(packages[i], char)
   }
-  library(packages[i], character.only = T)
+  library(packages[i], character.only = T, verbose = T)
+  print(paste0("Loaded package: ", packages))
 }
 
 ```
 
-### Load ETL functions
+#####   Load ETL functions
 
-```{r}
-
-#ETL functions
+```{r ETL_functions, warning=F}
 
 getKoBo <- function(.url,
                     .auth) {
@@ -195,10 +195,9 @@ readHelper()
 
 
 ```
+#####   Get form data
 
-
-
-```{r}
+```{r load_forms, warning=F}
 
 #Load form data
 
@@ -217,6 +216,15 @@ form_b2 <- getData("650795", auth, .version = "v1")%>%
   read_csv()%>%
   cleanData()
 
+
+```
+
+## Form A
+
+```{r form_aDT}
+#| column: screen
+
+DT::datatable(form_a)
 
 ```
 
@@ -241,4 +249,15 @@ form_a_latest <- form_a%>%group_by(name_of_hospital)%>%
 
 
 
+```
+
+### leaflet
+
+```{r}
+#| column: screen
+
+library(leaflet)
+leaflet() %>%
+  addTiles() %>%  # Add default OpenStreetMap map tiles
+  addMarkers(lng=174.768, lat=-36.852, popup="The birthplace of R")
 ```
