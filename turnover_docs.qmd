@@ -13,15 +13,47 @@ format:
     code-overflow: wrap
     highlight-style: github
     css: styles.css
+    self-contained: true
 ---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+
 
 ## Data Preparation
 
 You can skip/hide this part. This is just the code for the data preparation.
 
-#####   Load objects
+#### Load packages
 
-```{r saved_objects, warning=F}
+```{r load_packages,warning=FALSE,message=FALSE}
+
+
+
+
+packages <- c("httr", "tidyverse", "jsonlite", "stringi", "lubridate", "devtools",
+              "googledrive", "pdftools", "ggthemes", "ggrepel", "scales")
+
+for(i in 1:length(packages)) {
+  if(!packages[i]%in%installed.packages()) {
+    install.packages(packages[i], char)
+  }
+  library(packages[i], character.only = T, verbose = F, quietly = T)
+  print(paste0("Loaded package: ", packages))
+}
+
+#This packages is not in cran
+
+devtools::install_github("dmpe/urlshorteneR", build_vignettes = FALSE, upgrade = "never")
+library(urlshorteneR)
+
+```
+
+#### Load objects
+
+```{r saved_objects,warning=FALSE,message=FALSE}
 
 #Load necessary objects
 
@@ -40,8 +72,19 @@ default_green <- "#7CAE00"
 
 
 
+#### Designated Labs for lab stock
+designated_labs_stock <- c("Baguio General Hospital and Medical Center",
+                           "Lung Center of the Philippines",
+                           "Research Institute for Tropical Medicine",
+                           "San Lazaro Hospital",
+                           "Vicente Sotto Memorial Medical Center",
+                           "Southern Philippines Medical Center",
+                           "Caraga Regional Hospital"
+                           )
+
+
 #### Designated Labs for testing
-designated_labs <- c("Baguio General Hospital and Medical Center",
+designated_labs_testing <- c("Baguio General Hospital and Medical Center",
                      "Lung Center of the Philippines (LCP)",
                      "Research Institute for Tropical Medicine (RITM)",
                      "San Lazaro Hospital (SLH)",
@@ -50,7 +93,7 @@ designated_labs <- c("Baguio General Hospital and Medical Center",
                      "Caraga Regional Hospital GeneXpert Laboratory"
 )
 
-## diagnostic supplies  ####
+## diagnostic supplies
 diagnostic_supplies <- c(
   "diagnostic_boxes_supplies_row_stockout",
   "diagnostic_safety_supplies_stockout",
@@ -62,7 +105,7 @@ diagnostic_supplies <- c(
   "diagnostic_kit_supplies_stockout"
 )
 
-##diagnostic equipment ####
+##diagnostic equipment
 #there is a typo in speciment printer
 diagnostic_equipment <- c(
   "specimen_refrigerator_row_functional",
@@ -78,27 +121,37 @@ ppe_stockout_columns <- c("ppe_checklist_n95mask_stockout",
                           "ppe_checklist_surgicalmask_stockout",
                           "ppe_checklist_gloves_stockout",
                           "ppe_checklist_ppe_stockout")
+
+## diagnostic supplies
+diagnostic_supplies <- c(
+  "diagnostic_boxes_supplies_row_stockout",
+  "diagnostic_safety_supplies_stockout",
+  "diagnostic_manual_supplies_stockout",
+  "diagnostic_ppe_supplies_stockout",
+  "diagnostic_gloves_supplies_stockout",
+  "diagnostic_micropipette_supplies_stockout",
+  "diagnostic_transport_supplies_row_stockout",
+  "diagnostic_kit_supplies_stockout"
+)
+
+##diagnostic equipment
+#there is a typo in speciment printer
+diagnostic_equipment <- c(
+  "specimen_refrigerator_row_functional",
+  "specimen_rack_row_functional",
+  "speciment_printer_row_functional", 
+  "specimen_microcentrifuge_row_functional",
+  "specimen_minifuge_row_functional",
+  "specimen_micropippete_row_functional"
+)
+
+current_month <- as.Date(paste0(Sys.Date()%>%substring(1,7), "-01"), format = "%Y-%m-%d")
+
 ```
 
-#####   Load packages
+#### Load ETL functions
 
-```{r load_packages, warning=F}
-
-packages <- c("httr", "tidyverse", "jsonlite", "stringi")
-
-for(i in 1:length(packages)) {
-  if(!packages[i]%in%installed.packages()) {
-    install.packages(packages[i], char)
-  }
-  library(packages[i], character.only = T, verbose = T)
-  print(paste0("Loaded package: ", packages))
-}
-
-```
-
-#####   Load ETL functions
-
-```{r ETL_functions, warning=F}
+```{r ETL_functions,warning=FALSE,message=FALSE}
 
 getKoBo <- function(.url,
                     .auth) {
@@ -136,9 +189,10 @@ cleanData <- function(.data) {
     .data <- .data%>%select(-contains(c("version", "uuid", "instance", "deprecated", "geolocation", "xform")))
     
     #remove unwanted columns
-    names(.data) <- names(.data)%>%str_remove_all("^begin.*/") #removes the begin_group.../ in column names
+    names(.data) <- names(.data)%>%str_remove_all(".*/") #removes the begin_group.../ in column names
     names(.data) <- names(.data)%>%str_replace_all("/", "_") #removes the _ at the beginning
     names(.data) <- names(.data)%>%str_remove("^_+") #removes the _ at the beginning
+    
     
     
     #Converts the enye in Las Pinas to normal N
@@ -191,13 +245,196 @@ readHelper <- function() {
          envir = .GlobalEnv)
 }
 
-readHelper()
+getTestingData <- function() {
+  
+  #set cache folder
+  #gargle::gargle_oauth_cache()
+  #if you have token, must return file names
+  #Only the bitly link is constant between everyday releases
+  #This expands the bitly link and gets the google id of the google folder
+  #google id is between https://drive.google.com/drive/folders/ and ?usp=sharing
+  #use default bitly credentials provided by package creator
+  #registering an oauth app in bitly is PITA
+  bitly_auth(token = "bitly_auth.RDS")
+  #drive_auth(cache = ".secrets")
+  readme_link <- bitly_expand_link("bit.ly/DataDropPH")
+  readme_folder <- stringr::str_extract(readme_link$long_url, "(?<=https://drive.google.com/drive/folders/).*(?=[?])")
+  
+  #get file from DOH Data Drop public folder
+  #hopefully only 1 pdf here
+  readme_files <- drive_ls(as_id(readme_folder))
+  readme_pdf <- readme_files[1,]
+  
+  #download readme.pdf get the next url by searching for bit.ly/alphanumerics
+  #expand the second link, this should be the google folder containing the csv
+  drive_download(as_id(readme_pdf$id), path = "data_drop_readme.pdf", overwrite = TRUE)
+  pdf_file <- file.path("data_drop_readme.pdf")
+  pdf_link <- bitly_expand_link(
+    unlist(
+      str_extract_all(pdf_text(pdf_file), "bit[.]ly/[A-Za-z0-9]*"))[1]
+  )
+  
+  #get the data aggregates 
+  csv_folder <- str_extract(pdf_link$long_url, "(?<=https://drive.google.com/drive/folders/).*(?=[?])")
+  csv_directory <- drive_ls(as_id(csv_folder))
+  
+  00#this is a 1 row tibble get the id with $id
+  testing_data_id <- csv_directory[grepl("testing aggregates", csv_directory$name, ignore.case = T),]
+  
+  #download the testing aggregates
+  drive_download(as_id(testing_data_id$id), "testing_data.csv", overwrite = T)
+  testing_data <- read.csv("testing_data.csv", encoding = "UTF-8")
+  return(testing_data)
+}
+
+
+#clean testing aggregates ####
+cleanTestingData <- function() {
+  assign("testing_data", read.csv("testing_data.csv"),
+         envir = .GlobalEnv)
+  
+  testing_data_filtered <- testing_data%>%
+    filter(
+      facility_name %in% designated_labs_testing
+    )%>%
+    mutate(
+      testing_month = as.Date(format(as.Date(report_date), "%Y-%m-01"))
+    )
+  
+  testing_data_summary <- testing_data_filtered%>%
+    group_by(facility_name,
+             testing_month)%>%
+    arrange(report_date, .by_group = T)%>%
+    summarise(
+      samples_tested_month = sum(daily_output_samples_tested, na.rm = T),
+      samples_average_month = as.integer(mean(daily_output_samples_tested, na.rm = T)),
+      individuals_tested_month = sum(daily_output_unique_individuals, na.rm = T),
+      individuals_positive_month = sum(daily_output_positive_individuals, na.rm = T),
+      backlog_end_month = last(backlogs),
+      remaining_samples_end_month = last(remaining_available_tests)
+    )%>%ungroup()
+  assign("testing_data_summary",
+         testing_data_summary,
+         envir = .GlobalEnv)
+}
+
+
+
+
+testingDataPlot <- function() {
+    plot_data <- testing_data_summary%>%
+      ungroup()%>%
+      filter(testing_month %within% interval(today() %m-% months(9),
+                                             today()
+                                             )
+             )%>%
+      ungroup()%>%
+      mutate(short_name =  sapply(
+        str_extract_all(.$facility_name,
+                        pattern = "[A-Z](?=[a-z])"
+                        ),
+        paste,
+        collapse = ''),
+        testing_month_factor = testing_month%>%factor(
+          levels = sort(unique(.))
+          )
+        )%>%
+      group_by(facility_name,
+               testing_month,
+               short_name)
+    
+      plot <- plot_data%>%ggplot(aes(y = samples_average_month,
+                         x = testing_month
+                         )
+                         ) +
+        geom_vline(
+          aes(xintercept = max(plot_data$testing_month)),
+          size = 20,
+          color = "lightgray"
+          
+        ) +
+        geom_point(size = 1) +
+        geom_line(
+          linetype = "dashed",
+          show.legend = F,
+          size = 1.5,
+          aes(color = facility_name)
+        ) +
+        geom_label_repel(
+          aes(
+            x = testing_month,
+            y = samples_average_month,
+            label = paste0(samples_average_month),
+            fill = facility_name
+          ),
+          size = 5,
+          direction = "y",
+          fontface = "bold"
+        ) +
+        # geom_dl(
+        #   aes(label = short_name,
+        #       color = facility_name),
+        #   size = 4,
+        #   method = list("first.points", cex = 1.3, dl.trans(x = x - 0.8))
+        # ) +
+
+        labs(
+          x = "Month",
+          y = "Average samples tested",
+          title = "Average samples tested of selected laboratories",
+          subtitle = "Average for the current month (highlighted in gray) may change as different quantities of samples are tested everyday",
+          size = 10,
+          caption = "Data from DOH testing aggregates.
+       Number of samples tested only, not reflective of overall stock of facilities since they have remaining stock at the end of each month.
+    Formula used: (total samples tested per month)/(number of days in that month)"
+        ) +
+        theme_tufte(base_size = 22) +
+        scale_fill_manual(labels = unique(plot_data$short_name),
+                          values = scales::hue_pal()(7),
+                          name = "Facility:") +
+        theme(
+          legend.position = "top",
+          legend.direction = "horizontal",
+          axis.text = element_text(size = 12, angle = 0),
+          plot.title = element_text(size = 25),
+          axis.text.y = element_blank(),
+          axis.line.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          
+        ) +
+        scale_x_date(
+          breaks = testing_data_summary$testing_month,
+          date_labels = "%Y %b",
+          expand = c(0.08, 0)
+        ) +
+        guides(
+          fill = guide_legend(
+            override.aes = aes(label = ""),
+            nrow = 1
+          )
+        )
+  plot
+  saveRDS(plot,
+          "testing_data_plot.RDS")
+  ggsave("testing_data_plot.png", 
+         width = 45,
+         height = 30,
+         unit = "cm",
+         dpi = 400)
+  
+  return(plot)
+  
+}
+
 
 
 ```
-#####   Get form data
+
+#### Get form data
 
 ```{r load_forms, warning=F}
+
+readHelper()
 
 #Load form data
 
@@ -219,16 +456,37 @@ form_b2 <- getData("650795", auth, .version = "v1")%>%
 
 ```
 
-## Form A
+## Monitoring ang Evaluation Forms
 
-```{r form_aDT}
+### Form A
+
+Here are the list of submissions in Form A:<br>
+-   All submissions <br>
+-   Latest submissions and number of months since last submission <br>
+-   Number of beneficiaries; disaggregated by facility; only by latest submission each month <br>
+
+::: panel-tabset
+#### Form A All Submissions
+
+```{r forma_all}
 #| column: screen
 
-DT::datatable(form_a)
+DT::datatable(form_a, filter = "top", extensions = c("KeyTable", "Buttons"),
+              rownames = F,
+              options = list(keys = T,
+                             scrollX = F,
+                             dom = "Bfrtip",
+                             buttons = c("copy", "csv", "excel")
+                             )
+              )
 
 ```
 
-```{r}
+#### Form A Latest
+
+```{r forma_latest}
+#| column: screen
+
 
 DOH_facilities <- recipient_list%>%filter(facility_type == "DOH")
 
@@ -245,19 +503,190 @@ form_a_latest <- form_a%>%group_by(name_of_hospital)%>%
   filter(name_of_hospital != "Southern Tagalog Regional Hospital Molecular Laboratory")%>%
   select(!ends_with(c("x",
                       "X"))
-         )
+         )%>%
+  mutate(months_since_last = interval(submission_time%>%as.Date(), current_month)%/%months(1),
+         ppe_stockout = rowSums(
+           across({{ppe_stockout_columns}}) == "yes", #count items out of stock
+           na.rm = T),
+         na_stockout = rowSums(
+           is.na(across({{ppe_stockout_columns}})
+                 )
+           ),
+         no_stockout = (ppe_stockout==0)&(na_stockout<5)
+         )%>%
+  arrange(region.y, name_of_hospital)%>%
+  select(name_of_hospital, region.y, submission_time, months_since_last, no_stockout, everything())
 
-
+DT::datatable(form_a_latest, filter = "top", extensions = c("KeyTable", "Buttons"),
+              rownames = F,
+              options = list(keys = T,
+                             scrollX = F,
+                             dom = "Bfrtip",
+                             buttons = c("copy", "csv", "excel")
+                             )
+              )
 
 ```
 
-### leaflet
+#### Form A Beneficiaries (latest submission)
 
-```{r}
+```{r forma_beneficiaries}
 #| column: screen
 
-library(leaflet)
-leaflet() %>%
-  addTiles() %>%  # Add default OpenStreetMap map tiles
-  addMarkers(lng=174.768, lat=-36.852, popup="The birthplace of R")
+form_a_beneficiaries <- form_a%>%
+  group_by(duration, name_of_hospital)%>%
+  filter(submission_time==max(submission_time))%>%
+  select(name_of_hospital, submission_time, region, contains("beneficiaries"))%>%
+  mutate(across(contains("beneficiaries"),
+                ~ case_when(.<0 ~ NA_integer_,
+                            TRUE ~ .%>%as.integer())
+                ))%>%
+  arrange(name_of_hospital, duration)
+  
+
+DT::datatable(form_a_beneficiaries, filter = "top", extensions = c("KeyTable", "Buttons"),
+              rownames = F,
+              options = list(keys = T,
+                             scrollX = F,
+                             dom = "Bfrtip",
+                             buttons = c("copy", "csv", "excel")
+                             )
+              )
+
+
 ```
+
+#### Form A Beneficiaries (Per Month)
+
+```{r forma_beneficiaries_month}
+#| column: screen
+
+form_a_beneficiaries_month <- form_a_beneficiaries%>%
+  group_by(duration)%>%
+  summarise(across(contains("beneficiaries"),
+                   ~sum(., na.rm = T)))
+
+
+DT::datatable(form_a_beneficiaries_month, filter = "top", extensions = c("KeyTable", "Buttons"),
+              rownames = F,
+              options = list(keys = T,
+                             scrollX = F,
+                             dom = "Bfrtip",
+                             buttons = c("copy", "csv", "excel")
+                             )
+              )
+
+
+```
+
+:::
+
+### Form B
+
+Here are the list of submissions in Form B:<br> - All submissions<br> - Latest submissions and number of months since last submission<br>
+
+::: panel-tabset
+#### Form B All Submissions
+
+```{r form_b_all}
+#| column: screen
+
+form_b_all <- rbind(form_b, form_b2%>%select(names(form_b)))
+
+
+DT::datatable(form_b_all, filter = "top", extensions = c("KeyTable", "Buttons"),
+              rownames = F,
+              options = list(keys = T,
+                             scrollX = F,
+                             dom = "Bfrtip",
+                             buttons = c("copy", "csv", "excel")
+                             )
+              )
+
+
+```
+
+#### Form B Latest
+
+```{r formb_latest}
+#| column: screen
+
+form_b_latest <- form_b%>%group_by(name_of_hospital)%>%
+  filter(submission_time == max(submission_time),
+         facility_type == "DOH")%>%
+  select(name_of_hospital,
+         region,
+         submission_time,
+         facility_type,
+         all_of(diagnostic_supplies),
+         all_of(diagnostic_equipment))%>%
+  ungroup()%>%
+  group_by(region, name_of_hospital)%>%
+  arrange(.by_group = T)
+
+form_b2_latest <- form_b2%>%group_by(name_of_hospital)%>%
+  filter(submission_time == max(submission_time),
+         facility_type == "DOH")%>%
+  select(name_of_hospital,
+         region,
+         submission_time,
+         facility_type,
+         all_of(diagnostic_supplies),
+         all_of(diagnostic_equipment))%>%
+  ungroup()%>%
+  group_by(region, name_of_hospital)%>%
+  arrange(.by_group = T)
+
+form_b_latest <- rbind(form_b_latest,
+                       form_b2_latest%>%select(names(form_b_latest)))%>%
+  mutate(months_since_last = interval(submission_time%>%as.Date(), current_month)%/%months(1))%>%
+  mutate(
+    supplies_stockout = rowSums(
+      across({{diagnostic_supplies}}) == "yes", #count items out of stock
+      na.rm = T),
+    na_stockout = rowSums(
+      is.na(across({{diagnostic_supplies}})
+            )
+      ),
+    no_stockout = (supplies_stockout==0)&(na_stockout<5)
+    )%>%group_by(name_of_hospital)%>%
+  filter(submission_time==max(submission_time))%>%
+  arrange(region, name_of_hospital)%>%
+  select(name_of_hospital, region, submission_time, months_since_last, no_stockout, everything())
+  
+
+DT::datatable(form_b_latest, filter = "top", extensions = c("KeyTable", "Buttons"),
+              rownames = F,
+              options = list(keys = T,
+                             scrollX = F,
+                             dom = "Bfrtip",
+                             buttons = c("copy", "csv", "excel")
+                             )
+              )
+
+
+```
+
+#### Selected National Laboratories
+
+```{r formb_select_labs}
+#| column: screen
+
+designated_laboratory_supplies <- form_b_latest%>%filter(
+  name_of_hospital%in%designated_labs_stock)%>%
+  distinct()
+
+DT::datatable(designated_laboratory_supplies, filter = "top", extensions = c("KeyTable", "Buttons"),
+              rownames = F,
+              options = list(keys = T,
+                             scrollX = F,
+                             dom = "Bfrtip",
+                             buttons = c("copy", "csv", "excel")
+                             )
+              )
+
+
+
+```
+
+:::
